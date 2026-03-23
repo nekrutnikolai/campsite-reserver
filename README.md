@@ -76,7 +76,56 @@ Edit `recgov.py` and `reserveca.py` to change which campgrounds are monitored.
 
 **Recreation.gov** (`recgov.py`): Find campground IDs from the URL — e.g. `recreation.gov/camping/campgrounds/233116` → ID is `233116`.
 
-**ReserveCalifornia** (`reserveca.py`): Find `place_id` and `facility_id` from the booking URL — e.g. `reservecalifornia.com/Web/#/park/661/518` → place_id `661`, facility_id `518`.
+**ReserveCalifornia** (`reserveca.py`): Add parks to the `PARKS` list with just a `place_id`. Facility sections (campground loops) are auto-discovered at startup via the ReserveCalifornia API and cached to `facility_cache.json` (24h TTL).
+
+```python
+PARKS = [
+    {"name": "Julia Pfeiffer Burns SP", "place_id": "661"},
+    {"name": "Pfeiffer Big Sur SP", "place_id": "690"},
+]
+```
+
+Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/Web/#/park/690/767` → place_id is `690`.
+
+If auto-discovery breaks, you can pin specific facility IDs:
+```python
+{"name": "Pfeiffer Big Sur SP", "place_id": "690", "facility_ids": ["767"]}
+```
+
+### ReserveCalifornia API Reference
+
+The place API (`POST /rdr/search/place` with `{"PlaceId": <id>}`) returns rich data that can be used for future features:
+
+**Park-level fields** (`SelectedPlace`):
+| Field | Example | Notes |
+|-------|---------|-------|
+| `Latitude`, `Longitude` | `36.253`, `-121.781` | Park coordinates |
+| `Description` | `"Pfeiffer Big Sur State Park has..."` | Full text description |
+| `Url` | `http://www.parks.ca.gov/?page_id=570` | Official park page |
+| `ImageUrl` | `https://cali-content.usedirect.com/...` | Park photo |
+| `Allhighlights` | `"Hiking<br>Swimming<br>..."` | Activities (HTML-separated) |
+| `ParkSize` | `"Medium"` | Size category |
+| `TimeZone` | `"America/Los_Angeles"` | |
+| `Restrictions.FutureBookingStarts` | `"2026-03-24T00:00:00-07:00"` | When reservations open |
+| `Restrictions.FutureBookingEnds` | `"2026-09-22T00:00:00-07:00"` | Booking window end |
+| `Restrictions.MaximumStay` | `7` | Max nights per reservation |
+
+**Facility-level fields** (each entry in `SelectedPlace.Facilities`):
+| Field | Example | Notes |
+|-------|---------|-------|
+| `FacilityId`, `Name` | `611`, `"South Camp (sites 1-78)"` | |
+| `Latitude`, `Longitude` | `36.2425`, `-121.7743` | Facility-specific coordinates |
+| `Category` | `"Campgrounds"` or `"Group Camping"` | Facility type |
+| `FacilityAllowWebBooking` | `true` | Whether online booking is enabled |
+| `InSeason` | `true`/`false` | Current season status |
+| `UnitTypes` | Dict of site types | Contains `Name`, `MaxVehicleLength`, `HasAda`, `AvailableCount` |
+
+**Unit type examples** (nested under each facility):
+- `"Campsite"` — standard sites, `MaxVehicleLength: 32`
+- `"Tent Campsite"` — tent-only
+- `"Premium Campsite"` / `"Premium Tent Campsite"` — premium tier
+- `"Hike In Primitive Campsite"` — walk-in sites
+- `HasAda: true` — ADA accessible sites available
 
 ## Raspberry Pi Deployment
 
@@ -114,9 +163,10 @@ python -m pytest tests/ -v
 
 ## Next Steps
 
-- [ ] Add more campgrounds (Limekiln, Andrew Molera, etc.)
+- [ ] Add more CA parks (just add `place_id` to `PARKS` — facilities auto-discovered)
+- [ ] Filter by site type using `UnitTypes` data (tent, RV, group, ADA)
+- [ ] Show park lat/long and booking-window dates in status page
 - [ ] Add SMS alerts via Twilio as a backup notification channel
-- [ ] Add support for filtering by site type (tent, RV, group)
 - [ ] Webhook integration (Slack, Discord)
 - [ ] Track price and site attributes in alerts
 - [ ] Auto-booking via browser automation (Selenium/Playwright)

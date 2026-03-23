@@ -97,7 +97,8 @@ status = {
     "sites_found": 0,
     "total_tracked": 0,
     "date_ranges": [],
-    "campgrounds": [],
+    "campgrounds": [],  # list of {"name", "source", "sites"}
+
     "recent_finds": [],
 }
 
@@ -147,7 +148,12 @@ STATUS_TEMPLATE = string.Template("""<!DOCTYPE html>
 </div>
 <div class="card">
   <div class="label">Campgrounds:</div>
-  <ul>$campgrounds_html</ul>
+  <table style="width:100%; margin-top:8px; font-size:0.9em; border-collapse:collapse;">
+    <tr style="text-align:left; border-bottom:1px solid #eee;">
+      <th style="padding:4px 8px;">Name</th><th style="padding:4px 8px;">Source</th><th style="padding:4px 8px;">Sites</th>
+    </tr>
+    $campgrounds_html
+  </table>
 </div>
 $finds_html
 <div class="card">
@@ -189,7 +195,10 @@ class StatusHandler(BaseHTTPRequestHandler):
             failed_html = f'<div><span class="label">Failed sources:</span> {", ".join(status["failed_sources"])}</div>'
 
         dates_html = "".join(f"<li>{d}</li>" for d in status["date_ranges"])
-        campgrounds_html = "".join(f"<li>{c}</li>" for c in status["campgrounds"])
+        campgrounds_html = "".join(
+            f'<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:4px 8px;">{c["name"]}</td><td style="padding:4px 8px;">{c["source"]}</td><td style="padding:4px 8px;">{c["sites"]}</td></tr>'
+            for c in status["campgrounds"]
+        ) if isinstance(status["campgrounds"], list) and status["campgrounds"] and isinstance(status["campgrounds"][0], dict) else ""
 
         finds_html = ""
         if status["recent_finds"]:
@@ -237,6 +246,53 @@ def start_status_server(port):
     LOG.info("Status page at http://0.0.0.0:%d", port)
 
 
+def get_campground_info():
+    """Return list of dicts with name, source, and site count for each campground."""
+    info = []
+    for cg in recgov.CAMPGROUNDS:
+        info.append({"name": cg["name"], "source": "Recreation.gov", "sites": "?"})
+    for cg in reserveca.CAMPGROUNDS:
+        info.append({"name": cg["name"], "source": "ReserveCalifornia", "sites": "?"})
+
+    # Try to fetch actual site counts
+    for i, cg in enumerate(recgov.CAMPGROUNDS):
+        try:
+            from fake_useragent import UserAgent
+            resp = requests.get(
+                f"https://www.recreation.gov/api/camps/availability/campground/{cg['id']}/month",
+                params={"start_date": "2026-04-01T00:00:00.000Z"},
+                headers={"User-Agent": UserAgent().random},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                info[i]["sites"] = str(len(resp.json().get("campsites", {})))
+        except Exception:
+            pass
+
+    offset = len(recgov.CAMPGROUNDS)
+    for i, cg in enumerate(reserveca.CAMPGROUNDS):
+        try:
+            body = {
+                "FacilityId": int(cg["facility_id"]),
+                "StartDate": "04-01-2026",
+                "EndDate": "04-02-2026",
+                "IsADA": False, "MinVehicleLength": 0, "WebOnly": True,
+                "UnitTypesGroupIds": [], "UnitSort": "SiteNumber", "InSeasonOnly": False,
+            }
+            for url in reserveca.GRID_URLS:
+                try:
+                    resp = requests.post(url, json=body, timeout=10)
+                    if resp.status_code == 200:
+                        info[offset + i]["sites"] = str(len(resp.json().get("Facility", {}).get("Units", {})))
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    return info
+
+
 def check_commands(token, last_update_id):
     """Check for incoming /summary commands. Returns new last_update_id."""
     try:
@@ -274,19 +330,22 @@ def main():
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     use_telegram = not args.no_telegram and token and chat_id
 
-    all_names = [cg["name"] for cg in recgov.CAMPGROUNDS + reserveca.CAMPGROUNDS]
+    reserveca.discover_all_facilities()
+    LOG.info("Fetching campground info...")
+    cg_info = get_campground_info()
     status["started"] = datetime.now().isoformat(timespec="seconds")
     status["date_ranges"] = [f"{ci} to {co}" for ci, co in date_ranges]
-    status["campgrounds"] = all_names
+    status["campgrounds"] = cg_info
 
     start_status_server(args.port)
 
     if use_telegram:
         dates_str = "\n".join(f"  \u2022 {ci} to {co}" for ci, co in date_ranges)
+        cg_str = "\n".join(f"  \u2022 {c['name']} ({c['source']}, {c['sites']} sites)" for c in cg_info)
         startup_msg = (
             "\U0001f3d5 *Campsite monitor started!*\n"
             f"*Dates:*\n{dates_str}\n"
-            f"*Monitoring:* {', '.join(all_names)}"
+            f"*Campgrounds:*\n{cg_str}"
         )
         notify.send_telegram(token, chat_id, startup_msg)
 
