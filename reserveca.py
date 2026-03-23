@@ -40,7 +40,7 @@ def discover_facilities(place_id):
             data = resp.json()
             facilities = data.get("SelectedPlace", {}).get("Facilities", {})
             return [
-                {"facility_id": str(fid), "facility_name": fdata["Name"]}
+                {"facility_id": str(fdata["FacilityId"]), "facility_name": fdata["Name"]}
                 for fid, fdata in facilities.items()
             ]
         except Exception:
@@ -150,7 +150,7 @@ def check_availability(campground, checkin, checkout):
         needed_dates = []
         d = checkin
         while d < checkout:
-            needed_dates.append(d.strftime("%m/%d/%Y"))
+            needed_dates.append(d.strftime("%Y-%m-%dT00:00:00"))
             d += timedelta(days=1)
 
         available = []

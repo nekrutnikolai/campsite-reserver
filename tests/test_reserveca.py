@@ -40,15 +40,15 @@ class TestCheckAvailability(unittest.TestCase):
             "u1": {
                 "Name": "Site A",
                 "Slices": {
-                    "06/14/2024": {"IsFree": True},
-                    "06/15/2024": {"IsFree": True},
+                    "2024-06-14T00:00:00": {"IsFree": True},
+                    "2024-06-15T00:00:00": {"IsFree": True},
                 },
             },
             "u2": {
                 "Name": "Site B",
                 "Slices": {
-                    "06/14/2024": {"IsFree": True},
-                    "06/15/2024": {"IsFree": False},
+                    "2024-06-14T00:00:00": {"IsFree": True},
+                    "2024-06-15T00:00:00": {"IsFree": False},
                 },
             },
         })
@@ -86,6 +86,12 @@ SAMPLE_FACILITIES = {
     "767": {"FacilityId": 767, "Name": "Main Camp"},
 }
 
+# Dict keys differ from FacilityId values (like Hearst San Simeon)
+MISMATCHED_FACILITIES = {
+    "1": {"FacilityId": 789, "Name": "Upper Section"},
+    "4": {"FacilityId": 787, "Name": "Washburn"},
+}
+
 
 class TestDiscoverFacilities(unittest.TestCase):
     @patch("reserveca.requests.post")
@@ -99,6 +105,17 @@ class TestDiscoverFacilities(unittest.TestCase):
         self.assertEqual(ids, {"611", "767"})
         names = {f["facility_name"] for f in result}
         self.assertEqual(names, {"South Camp", "Main Camp"})
+
+    @patch("reserveca.requests.post")
+    def test_discover_uses_facility_id_not_dict_key(self, mock_post):
+        mock_post.return_value = make_place_response(MISMATCHED_FACILITIES)
+
+        result = reserveca.discover_facilities("713")
+
+        ids = {f["facility_id"] for f in result}
+        self.assertEqual(ids, {"789", "787"})
+        self.assertNotIn("1", ids)
+        self.assertNotIn("4", ids)
 
     @patch("reserveca.requests.post", side_effect=Exception("timeout"))
     def test_discover_raises_on_failure(self, mock_post):
