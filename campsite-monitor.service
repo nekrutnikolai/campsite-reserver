@@ -1,0 +1,15 @@
+[Unit]
+Description=Campsite Availability Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/campsite-monitor
+ExecStart=/home/pi/campsite-monitor/venv/bin/python campsite_monitor.py --dates YYYY-MM-DD:YYYY-MM-DD
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
