@@ -111,6 +111,9 @@ The place API (`POST /rdr/search/place` with `{"PlaceId": <id>}`) returns rich d
 | `Restrictions.MaximumStay` | `7` | Max nights per reservation |
 
 **Facility-level fields** (each entry in `SelectedPlace.Facilities`):
+
+Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`. Always use `fdata["FacilityId"]` from inside each object — the dict key may differ (e.g. Hearst San Simeon has key `"4"` but `FacilityId: 787`).
+
 | Field | Example | Notes |
 |-------|---------|-------|
 | `FacilityId`, `Name` | `611`, `"South Camp (sites 1-78)"` | |
@@ -126,6 +129,10 @@ The place API (`POST /rdr/search/place` with `{"PlaceId": <id>}`) returns rich d
 - `"Premium Campsite"` / `"Premium Tent Campsite"` — premium tier
 - `"Hike In Primitive Campsite"` — walk-in sites
 - `HasAda: true` — ADA accessible sites available
+
+**Grid API (availability) gotchas:**
+- Slice keys use ISO datetime format: `"2026-04-18T00:00:00"` (not `"04/18/2026"`)
+- `IsFree: true` on a Slice means the site is bookable for that night
 
 ## Raspberry Pi Deployment
 
