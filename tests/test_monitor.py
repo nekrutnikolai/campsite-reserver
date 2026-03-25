@@ -63,5 +63,62 @@ class TestSeenSetFiltering(unittest.TestCase):
         self.assertEqual(new_sites[1]["site"], "002")
 
 
+class TestFailureAlerts(unittest.TestCase):
+    """Test the consecutive failure tracking and Telegram alerting logic."""
+
+    def _run_cycle(self, errors, all_names, consecutive_failures, alerted_sources, telegram_msgs):
+        """Simulate one cycle of the failure tracking logic from main()."""
+        error_set = set(errors)
+        for name in all_names:
+            if name in error_set:
+                consecutive_failures[name] = consecutive_failures.get(name, 0) + 1
+                if consecutive_failures[name] == 3 and name not in alerted_sources:
+                    alerted_sources.add(name)
+                    telegram_msgs.append(f"failure:{name}")
+            else:
+                if name in alerted_sources:
+                    alerted_sources.discard(name)
+                    telegram_msgs.append(f"recovered:{name}")
+                consecutive_failures[name] = 0
+
+    def test_alert_after_3_consecutive_failures(self):
+        cf, alerted, msgs = {}, set(), []
+        names = {"Camp A"}
+        for _ in range(3):
+            self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self.assertEqual(msgs, ["failure:Camp A"])
+
+    def test_no_alert_on_transient_failure(self):
+        cf, alerted, msgs = {}, set(), []
+        names = {"Camp A"}
+        self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self._run_cycle([], names, cf, alerted, msgs)  # recovers before threshold
+        self.assertEqual(msgs, [])
+
+    def test_recovery_message_after_alert(self):
+        cf, alerted, msgs = {}, set(), []
+        names = {"Camp A"}
+        for _ in range(3):
+            self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self._run_cycle([], names, cf, alerted, msgs)
+        self.assertEqual(msgs, ["failure:Camp A", "recovered:Camp A"])
+
+    def test_no_duplicate_failure_alerts(self):
+        cf, alerted, msgs = {}, set(), []
+        names = {"Camp A"}
+        for _ in range(6):
+            self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self.assertEqual(msgs, ["failure:Camp A"])
+
+    def test_multiple_sources_independent(self):
+        cf, alerted, msgs = {}, set(), []
+        names = {"Camp A", "Camp B"}
+        for _ in range(3):
+            self._run_cycle(["Camp A"], names, cf, alerted, msgs)
+        self.assertIn("failure:Camp A", msgs)
+        self.assertNotIn("failure:Camp B", msgs)
+
+
 if __name__ == "__main__":
     unittest.main()

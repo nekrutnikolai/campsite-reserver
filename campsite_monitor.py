@@ -356,6 +356,8 @@ def main():
     sites_found = 0
     summary_sent_today = False
     last_update_id = 0
+    consecutive_failures = {}  # campground name -> count
+    alerted_sources = set()    # sources we've already sent a failure alert for
 
     # Flush any old messages so we don't process stale /summary commands
     if use_telegram:
@@ -384,6 +386,25 @@ def main():
                 failed_sources.update(errors)
             status["failures"] = failures
             status["failed_sources"] = sorted(failed_sources)
+
+            # Track consecutive failures and send alerts
+            all_names = {cg["name"] for cg in recgov.CAMPGROUNDS + reserveca.CAMPGROUNDS}
+            error_set = set(errors)
+            for name in all_names:
+                if name in error_set:
+                    consecutive_failures[name] = consecutive_failures.get(name, 0) + 1
+                    if consecutive_failures[name] == 3 and name not in alerted_sources:
+                        alerted_sources.add(name)
+                        if use_telegram:
+                            notify.send_telegram(token, chat_id,
+                                f"\u26a0\ufe0f *API failure:* {name}\n3 consecutive check failures")
+                else:
+                    if name in alerted_sources:
+                        alerted_sources.discard(name)
+                        if use_telegram:
+                            notify.send_telegram(token, chat_id,
+                                f"\u2705 *Recovered:* {name}")
+                    consecutive_failures[name] = 0
 
             nights = (checkout - checkin).days
             for site in available:
