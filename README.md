@@ -7,10 +7,12 @@ Polls [Recreation.gov](https://www.recreation.gov) and [ReserveCalifornia](https
 - Monitors multiple campgrounds across both Recreation.gov and ReserveCalifornia
 - Supports multiple date ranges (e.g. 1-night and 2-night stays)
 - Telegram alerts when a site opens up
+- Telegram alerts when a previously-available site disappears ("gone" notifications)
+- Dual booking links: direct site link + facility grid page
 - `/summary` bot command for on-demand status
 - Daily summary at noon
 - Built-in status web page with health indicator and logs
-- Rotating log files (20MB max)
+- Rotating log files (5MB max)
 
 ## Quick Start
 
@@ -85,7 +87,7 @@ PARKS = [
 ]
 ```
 
-Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/Web/#/park/690/767` → place_id is `690`.
+Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/#/park/690/767` → place_id is `690`.
 
 If auto-discovery breaks, you can pin specific facility IDs:
 ```python
@@ -133,6 +135,10 @@ Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`.
 **Grid API (availability) gotchas:**
 - Slice keys use ISO datetime format: `"2026-04-18T00:00:00"` (not `"04/18/2026"`)
 - `IsFree: true` on a Slice means the site is bookable for that night
+- `IsWalkin: true` — site is walk-in only, cannot be booked online (filter these out)
+- `IsBlocked: true` — site is administratively blocked
+- `IsReservationDraw: true` — site is in a reservation lottery
+- `Lock: "2026-..."` — site is locked by another user mid-checkout (transient)
 
 ## Raspberry Pi Deployment
 

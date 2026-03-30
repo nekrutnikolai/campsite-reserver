@@ -36,19 +36,32 @@ class TestCheckAvailability(unittest.TestCase):
 
     @patch("reserveca.requests.post")
     def test_mixed_availability(self, mock_post):
+        free_slice = {
+            "IsFree": True,
+            "IsWalkin": False,
+            "IsBlocked": False,
+            "IsReservationDraw": False,
+            "Lock": None,
+        }
         mock_post.return_value = make_response({
             "u1": {
                 "Name": "Site A",
                 "Slices": {
-                    "2024-06-14T00:00:00": {"IsFree": True},
-                    "2024-06-15T00:00:00": {"IsFree": True},
+                    "2024-06-14T00:00:00": free_slice,
+                    "2024-06-15T00:00:00": free_slice,
                 },
             },
             "u2": {
                 "Name": "Site B",
                 "Slices": {
-                    "2024-06-14T00:00:00": {"IsFree": True},
-                    "2024-06-15T00:00:00": {"IsFree": False},
+                    "2024-06-14T00:00:00": free_slice,
+                    "2024-06-15T00:00:00": {
+                        "IsFree": False,
+                        "IsWalkin": False,
+                        "IsBlocked": False,
+                        "IsReservationDraw": False,
+                        "Lock": None,
+                    },
                 },
             },
         })
@@ -61,11 +74,155 @@ class TestCheckAvailability(unittest.TestCase):
         self.assertEqual(result[0]["campground"], "Test Park")
 
     @patch("reserveca.requests.post", side_effect=Exception("timeout"))
-    def test_error_returns_empty(self, mock_post):
+    def test_error_propagates(self, mock_post):
+        with self.assertRaises(Exception):
+            reserveca.check_availability(
+                self.campground, date(2024, 6, 14), date(2024, 6, 16)
+            )
+
+    @patch("reserveca.requests.post")
+    def test_walkin_sites_excluded(self, mock_post):
+        mock_post.return_value = make_response({
+            "u1": {
+                "Name": "Site W",
+                "Slices": {
+                    "2024-06-14T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": True,
+                        "IsBlocked": False,
+                        "IsReservationDraw": False,
+                        "Lock": None,
+                    },
+                    "2024-06-15T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": True,
+                        "IsBlocked": False,
+                        "IsReservationDraw": False,
+                        "Lock": None,
+                    },
+                },
+            },
+        })
+
         result = reserveca.check_availability(
             self.campground, date(2024, 6, 14), date(2024, 6, 16)
         )
         self.assertEqual(result, [])
+
+    @patch("reserveca.requests.post")
+    def test_blocked_sites_excluded(self, mock_post):
+        mock_post.return_value = make_response({
+            "u1": {
+                "Name": "Site B",
+                "Slices": {
+                    "2024-06-14T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": True,
+                        "IsReservationDraw": False,
+                        "Lock": None,
+                    },
+                    "2024-06-15T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": True,
+                        "IsReservationDraw": False,
+                        "Lock": None,
+                    },
+                },
+            },
+        })
+
+        result = reserveca.check_availability(
+            self.campground, date(2024, 6, 14), date(2024, 6, 16)
+        )
+        self.assertEqual(result, [])
+
+    @patch("reserveca.requests.post")
+    def test_draw_sites_excluded(self, mock_post):
+        mock_post.return_value = make_response({
+            "u1": {
+                "Name": "Site D",
+                "Slices": {
+                    "2024-06-14T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": False,
+                        "IsReservationDraw": True,
+                        "Lock": None,
+                    },
+                    "2024-06-15T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": False,
+                        "IsReservationDraw": True,
+                        "Lock": None,
+                    },
+                },
+            },
+        })
+
+        result = reserveca.check_availability(
+            self.campground, date(2024, 6, 14), date(2024, 6, 16)
+        )
+        self.assertEqual(result, [])
+
+    @patch("reserveca.requests.post")
+    def test_locked_sites_excluded(self, mock_post):
+        mock_post.return_value = make_response({
+            "u1": {
+                "Name": "Site L",
+                "Slices": {
+                    "2024-06-14T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": False,
+                        "IsReservationDraw": False,
+                        "Lock": "2026-04-18T12:00:00",
+                    },
+                    "2024-06-15T00:00:00": {
+                        "IsFree": True,
+                        "IsWalkin": False,
+                        "IsBlocked": False,
+                        "IsReservationDraw": False,
+                        "Lock": "2026-04-18T12:00:00",
+                    },
+                },
+            },
+        })
+
+        result = reserveca.check_availability(
+            self.campground, date(2024, 6, 14), date(2024, 6, 16)
+        )
+        self.assertEqual(result, [])
+
+    @patch("reserveca.requests.post")
+    def test_available_site_includes_park_url(self, mock_post):
+        free_slice = {
+            "IsFree": True,
+            "IsWalkin": False,
+            "IsBlocked": False,
+            "IsReservationDraw": False,
+            "Lock": None,
+        }
+        mock_post.return_value = make_response({
+            "u1": {
+                "Name": "Site A",
+                "Slices": {
+                    "2024-06-14T00:00:00": free_slice,
+                    "2024-06-15T00:00:00": free_slice,
+                },
+            },
+        })
+
+        result = reserveca.check_availability(
+            self.campground, date(2024, 6, 14), date(2024, 6, 16)
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(
+            result[0]["park_url"],
+            reserveca.PARK_URL.format(place_id="100"),
+        )
 
     @patch("reserveca.requests.post")
     def test_date_format_in_request(self, mock_post):

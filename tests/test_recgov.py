@@ -90,14 +90,12 @@ class TestCheckAvailability(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(mock_get.call_count, 2)
 
-    @patch("recgov.UserAgent")
     @patch("recgov.requests.get", side_effect=Exception("network error"))
-    def test_request_error(self, mock_get, mock_ua):
-        mock_ua.return_value.random = "TestAgent"
-        result = recgov.check_availability(
-            self.campground, date(2024, 6, 14), date(2024, 6, 16)
-        )
-        self.assertEqual(result, [])
+    def test_request_error_propagates(self, mock_get):
+        with self.assertRaises(Exception):
+            recgov.check_availability(
+                self.campground, date(2024, 6, 14), date(2024, 6, 16)
+            )
 
     @patch("recgov.UserAgent")
     @patch("recgov.requests.get")

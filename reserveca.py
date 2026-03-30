@@ -23,7 +23,8 @@ GRID_URLS = [
     "https://calirdr.usedirect.com/rdr/rdr/search/grid",
     "https://california-rdr.prod.cali.rd12.recreation-management.tylerapp.com/rdr/search/grid",
 ]
-BOOKING_URL = "https://www.reservecalifornia.com/Web/#/park/{place_id}/{facility_id}"
+BOOKING_URL = "https://www.reservecalifornia.com/#/park/{place_id}/{facility_id}"
+PARK_URL = "https://www.reservecalifornia.com/#/park/{place_id}"
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "facility_cache.json")
 CACHE_MAX_AGE = 86400  # 24 hours
@@ -111,65 +112,65 @@ def discover_all_facilities():
 
 
 def check_availability(campground, checkin, checkout):
-    """Check a single ReserveCalifornia campground. Returns list of available sites.
-    On any error, logs a warning and returns []."""
-    try:
-        facility_id = campground["facility_id"]
-        place_id = campground["place_id"]
-        name = campground["name"]
+    """Check a single ReserveCalifornia campground. Returns list of available sites."""
+    facility_id = campground["facility_id"]
+    place_id = campground["place_id"]
+    name = campground["name"]
 
-        body = {
-            "FacilityId": int(facility_id),
-            "StartDate": checkin.strftime("%m-%d-%Y"),
-            "EndDate": checkout.strftime("%m-%d-%Y"),
-            "IsADA": False,
-            "MinVehicleLength": 0,
-            "WebOnly": True,
-            "UnitTypesGroupIds": [],
-            "UnitSort": "SiteNumber",
-            "InSeasonOnly": False,
-        }
+    body = {
+        "FacilityId": int(facility_id),
+        "StartDate": checkin.strftime("%m-%d-%Y"),
+        "EndDate": checkout.strftime("%m-%d-%Y"),
+        "IsADA": False,
+        "MinVehicleLength": 0,
+        "WebOnly": True,
+        "UnitTypesGroupIds": [],
+        "UnitSort": "SiteNumber",
+        "InSeasonOnly": False,
+    }
 
-        data = None
-        for url_candidate in GRID_URLS:
-            try:
-                resp = requests.post(url_candidate, json=body, timeout=15)
-                resp.raise_for_status()
-                data = resp.json()
-                LOG.debug("ReserveCalifornia responded via %s", url_candidate)
-                break
-            except Exception:
-                continue
-        if data is None:
-            raise ConnectionError("All ReserveCalifornia endpoints failed")
+    data = None
+    for url_candidate in GRID_URLS:
+        try:
+            resp = requests.post(url_candidate, json=body, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            LOG.debug("ReserveCalifornia responded via %s", url_candidate)
+            break
+        except Exception:
+            continue
+    if data is None:
+        raise ConnectionError("All ReserveCalifornia endpoints failed")
 
-        units = data.get("Facility", {}).get("Units", {})
-        url = BOOKING_URL.format(place_id=place_id, facility_id=facility_id)
+    units = data.get("Facility", {}).get("Units", {})
+    url = BOOKING_URL.format(place_id=place_id, facility_id=facility_id)
+    park_url = PARK_URL.format(place_id=place_id)
 
-        # Build list of dates we need to check
-        needed_dates = []
-        d = checkin
-        while d < checkout:
-            needed_dates.append(d.strftime("%Y-%m-%dT00:00:00"))
-            d += timedelta(days=1)
+    # Build list of dates we need to check
+    needed_dates = []
+    d = checkin
+    while d < checkout:
+        needed_dates.append(d.strftime("%Y-%m-%dT00:00:00"))
+        d += timedelta(days=1)
 
-        available = []
-        for unit_id, unit in units.items():
-            slices = unit.get("Slices", {})
-            all_free = all(
-                slices.get(date_str, {}).get("IsFree", False)
-                for date_str in needed_dates
-            )
-            if all_free:
-                available.append({
-                    "site": unit.get("Name", unit_id),
-                    "campground": name,
-                    "url": url,
-                })
+    available = []
+    for unit_id, unit in units.items():
+        slices = unit.get("Slices", {})
+        all_free = all(
+            slices.get(date_str, {}).get("IsFree", False)
+            and not slices.get(date_str, {}).get("IsWalkin", False)
+            and not slices.get(date_str, {}).get("IsBlocked", False)
+            and not slices.get(date_str, {}).get("IsReservationDraw", False)
+            and not slices.get(date_str, {}).get("Lock")
+            for date_str in needed_dates
+        )
+        if all_free:
+            available.append({
+                "site": unit.get("Name", unit_id),
+                "campground": name,
+                "url": url,
+                "park_url": park_url,
+            })
 
-        LOG.debug("%s: %d sites available", name, len(available))
-        return available
-
-    except Exception:
-        LOG.warning("Error checking %s", campground.get("name", campground), exc_info=True)
-        return []
+    LOG.debug("%s: %d sites available", name, len(available))
+    return available

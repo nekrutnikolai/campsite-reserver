@@ -120,5 +120,115 @@ class TestFailureAlerts(unittest.TestCase):
         self.assertNotIn("failure:Camp B", msgs)
 
 
+class TestGoneAlerts(unittest.TestCase):
+    """Test the previously_available tracking logic for gone alerts."""
+
+    def _run_cycle(self, available, checkin, checkout, previously_available):
+        """Simulate one cycle of the gone-detection logic from main().
+
+        Returns (new_sites, gone_sites, updated_previously_available).
+        """
+        now_available = {}
+        for site in available:
+            key = (site["campground"], site["site"], str(checkin), str(checkout))
+            now_available[key] = site
+
+        new_sites = []
+        for key, site in now_available.items():
+            if key not in previously_available:
+                new_sites.append(site)
+
+        gone_sites = []
+        for key, site in previously_available.items():
+            if key[2] == str(checkin) and key[3] == str(checkout) and key not in now_available:
+                gone_sites.append(site)
+
+        # Update: remove old keys for this date range, add new
+        updated = {
+            k: v for k, v in previously_available.items()
+            if not (k[2] == str(checkin) and k[3] == str(checkout))
+        }
+        updated.update(now_available)
+
+        return new_sites, gone_sites, updated
+
+    def test_gone_alert_when_site_disappears(self):
+        checkin = date(2024, 6, 14)
+        checkout = date(2024, 6, 16)
+        site_a = {"site": "001", "campground": "Camp", "url": "https://example.com"}
+        previously_available = {}
+
+        # Cycle 1: site_a available
+        new, gone, previously_available = self._run_cycle(
+            [site_a], checkin, checkout, previously_available
+        )
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(gone), 0)
+
+        # Cycle 2: no sites available
+        new, gone, previously_available = self._run_cycle(
+            [], checkin, checkout, previously_available
+        )
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(gone), 1)
+        self.assertEqual(gone[0]["site"], "001")
+
+    def test_reappearing_site_alerts_again(self):
+        checkin = date(2024, 6, 14)
+        checkout = date(2024, 6, 16)
+        site_a = {"site": "001", "campground": "Camp", "url": "https://example.com"}
+        previously_available = {}
+
+        # Cycle 1: site_a available
+        new, gone, previously_available = self._run_cycle(
+            [site_a], checkin, checkout, previously_available
+        )
+        self.assertEqual(len(new), 1)
+
+        # Cycle 2: site_a gone
+        new, gone, previously_available = self._run_cycle(
+            [], checkin, checkout, previously_available
+        )
+        self.assertEqual(len(gone), 1)
+
+        # Cycle 3: site_a available again — should re-alert as new
+        new, gone, previously_available = self._run_cycle(
+            [site_a], checkin, checkout, previously_available
+        )
+        self.assertEqual(len(new), 1)
+        self.assertEqual(new[0]["site"], "001")
+
+    def test_no_gone_for_different_date_range(self):
+        checkin_a = date(2024, 6, 14)
+        checkout_a = date(2024, 6, 16)
+        checkin_b = date(2024, 7, 1)
+        checkout_b = date(2024, 7, 3)
+        site_a = {"site": "001", "campground": "Camp", "url": "https://example.com"}
+        previously_available = {}
+
+        # Cycle 1: site_a available for dates A
+        new, gone, previously_available = self._run_cycle(
+            [site_a], checkin_a, checkout_a, previously_available
+        )
+        self.assertEqual(len(new), 1)
+
+        # Cycle 2: check dates B with no sites — should NOT trigger gone for dates A site
+        new, gone, previously_available = self._run_cycle(
+            [], checkin_b, checkout_b, previously_available
+        )
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(gone), 0)
+
+
+class TestDateValidation(unittest.TestCase):
+    """Test that invalid date ranges are rejected."""
+
+    @patch("dotenv.load_dotenv")
+    @patch("sys.argv", ["prog", "--dates", "2024-06-16:2024-06-14", "--once", "--no-telegram"])
+    def test_checkout_before_checkin(self, mock_dotenv):
+        with self.assertRaises(SystemExit):
+            campsite_monitor.main()
+
+
 if __name__ == "__main__":
     unittest.main()
