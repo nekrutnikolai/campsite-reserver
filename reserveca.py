@@ -23,8 +23,8 @@ GRID_URLS = [
     "https://calirdr.usedirect.com/rdr/rdr/search/grid",
     "https://california-rdr.prod.cali.rd12.recreation-management.tylerapp.com/rdr/search/grid",
 ]
-BOOKING_URL = "https://www.reservecalifornia.com/#/park/{place_id}/{facility_id}"
-PARK_URL = "https://www.reservecalifornia.com/#/park/{place_id}"
+BOOKING_URL = "https://www.reservecalifornia.com/park/{place_id}/{facility_id}"
+PARK_URL = "https://www.reservecalifornia.com/park/{place_id}"
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "facility_cache.json")
 CACHE_MAX_AGE = 86400  # 24 hours

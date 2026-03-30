@@ -87,7 +87,7 @@ PARKS = [
 ]
 ```
 
-Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/#/park/690/767` → place_id is `690`.
+Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/park/690/767` → place_id is `690`.
 
 If auto-discovery breaks, you can pin specific facility IDs:
 ```python

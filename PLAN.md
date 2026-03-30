@@ -45,7 +45,7 @@ POST https://california-rdr.prod.cali.rd12.recreation-management.tylerapp.com/rd
 ```
 - Place API response includes: facility names, lat/long, park description, highlights, booking restrictions, unit types (tent, RV, premium, ADA), and more
 - Facility results cached to `facility_cache.json` (24h TTL, stale cache used as fallback)
-- Booking URL: `https://www.reservecalifornia.com/Web/#/park/{place_id}/{facility_id}`
+- Booking URL: `https://www.reservecalifornia.com/park/{place_id}/{facility_id}`
 
 ## Notifications: Telegram
 
