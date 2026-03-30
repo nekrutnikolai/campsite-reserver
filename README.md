@@ -58,7 +58,7 @@ python campsite_monitor.py --dates 2024-06-14:2024-06-16 --port 9090
 | Flag | Description |
 |------|-------------|
 | `--dates` | Date ranges as `CHECKIN:CHECKOUT` (required, multiple allowed) |
-| `--interval` | Polling interval in seconds (default: 300) |
+| `--interval` | Polling interval in seconds (default: 300, minimum: 30) |
 | `--once` | Run a single check and exit |
 | `--verbose` | Enable debug logging |
 | `--no-telegram` | Disable Telegram notifications |
@@ -145,7 +145,7 @@ Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`.
 ```bash
 # Copy files to the Pi
 rsync -avz --exclude 'venv/' --exclude '__pycache__/' --exclude '.git/' \
-  --exclude '.pytest_cache/' --exclude '*.log' \
+  --exclude '.pytest_cache/' --exclude '*.log' --exclude '.env' \
   ./ pi@<PI_IP>:/home/pi/campsite-monitor/
 
 # On the Pi
@@ -153,7 +153,7 @@ cd /home/pi/campsite-monitor
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# Edit the service file with your dates
+# Edit the service file with your dates and interval
 nano campsite-monitor.service
 
 # Install and start
@@ -167,6 +167,29 @@ sudo journalctl -u campsite-monitor -f
 ```
 
 The status page will be available at `http://<PI_IP>:8080`.
+
+### DNS Reliability
+
+If the Pi's DNS is unreliable (transient resolution failures), add public DNS fallbacks:
+
+```bash
+echo "static domain_name_servers=192.168.1.1 8.8.8.8 1.1.1.1" | sudo tee -a /etc/dhcpcd.conf
+sudo systemctl restart dhcpcd
+```
+
+Replace `192.168.1.1` with your router's IP.
+
+### Updating
+
+```bash
+# From your dev machine
+rsync -avz --exclude 'venv/' --exclude '__pycache__/' --exclude '.git/' \
+  --exclude '.pytest_cache/' --exclude '*.log' --exclude '.env' \
+  ./ pi@<PI_IP>:/home/pi/campsite-monitor/
+
+# On the Pi
+sudo systemctl restart campsite-monitor
+```
 
 ## Tests
 
@@ -182,4 +205,3 @@ python -m pytest tests/ -v
 - [ ] Add SMS alerts via Twilio as a backup notification channel
 - [ ] Webhook integration (Slack, Discord)
 - [ ] Track price and site attributes in alerts
-- [ ] Auto-booking via browser automation (Selenium/Playwright)
