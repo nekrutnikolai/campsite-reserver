@@ -45,6 +45,7 @@ def check_availability(campground, checkin, checkout):
             AVAILABILITY_URL.format(id=campground_id),
             params={"start_date": start_str},
             headers=headers,
+            timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()

@@ -108,6 +108,18 @@ class TestCheckAvailability(unittest.TestCase):
         )
         self.assertEqual(result, [])
 
+    @patch("recgov.UserAgent")
+    @patch("recgov.requests.get")
+    def test_request_timeout(self, mock_get, mock_ua):
+        mock_ua.return_value.random = "TestAgent"
+        mock_get.return_value = make_response({})
+
+        recgov.check_availability(
+            self.campground, date(2024, 6, 14), date(2024, 6, 16)
+        )
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["timeout"], 15)
+
 
 if __name__ == "__main__":
     unittest.main()

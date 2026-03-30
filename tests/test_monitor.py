@@ -229,6 +229,39 @@ class TestDateValidation(unittest.TestCase):
         with self.assertRaises(SystemExit):
             campsite_monitor.main()
 
+    @patch("dotenv.load_dotenv")
+    @patch("sys.argv", ["prog", "--dates", "foo:bar", "--once", "--no-telegram"])
+    def test_malformed_date_input(self, mock_dotenv):
+        with self.assertRaises(SystemExit):
+            campsite_monitor.main()
+
+    @patch("dotenv.load_dotenv")
+    @patch("sys.argv", ["prog", "--dates", "2024-06-14", "--once", "--no-telegram"])
+    def test_missing_colon_in_date(self, mock_dotenv):
+        with self.assertRaises(SystemExit):
+            campsite_monitor.main()
+
+
+class TestMainLoopResilience(unittest.TestCase):
+    """Test that the main loop survives unexpected errors."""
+
+    @patch("campsite_monitor.time.sleep")
+    @patch("campsite_monitor.start_status_server")
+    @patch("campsite_monitor.get_campground_info", return_value=[])
+    @patch("campsite_monitor.reserveca")
+    @patch("campsite_monitor.recgov")
+    @patch("campsite_monitor.check_all", side_effect=RuntimeError("unexpected"))
+    @patch("dotenv.load_dotenv")
+    @patch("sys.argv", ["prog", "--dates", "2024-06-14:2024-06-16", "--once", "--no-telegram"])
+    def test_main_loop_survives_unexpected_error(self, mock_dotenv, mock_check_all,
+                                                  mock_rg, mock_rca, mock_info,
+                                                  mock_server, mock_sleep):
+        mock_rg.CAMPGROUNDS = []
+        mock_rca.CAMPGROUNDS = []
+        mock_rca.discover_all_facilities = MagicMock()
+        # Should not raise — the exception guard catches it
+        campsite_monitor.main()
+
 
 if __name__ == "__main__":
     unittest.main()
