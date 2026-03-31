@@ -7,11 +7,6 @@ from fake_useragent import UserAgent
 LOG = logging.getLogger(__name__)
 _UA = UserAgent(fallback="Mozilla/5.0 (compatible)")
 
-CAMPGROUNDS = [
-    {"name": "Kirk Creek", "id": "233116"},
-    {"name": "Plaskett Creek", "id": "231959"},
-]
-
 BASE_URL = "https://www.recreation.gov"
 AVAILABILITY_URL = BASE_URL + "/api/camps/availability/campground/{id}/month"
 BOOKING_URL = BASE_URL + "/camping/campgrounds/{id}"

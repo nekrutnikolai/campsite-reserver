@@ -5,6 +5,9 @@ Polls [Recreation.gov](https://www.recreation.gov) and [ReserveCalifornia](https
 ## Features
 
 - Monitors multiple campgrounds across both Recreation.gov and ReserveCalifornia
+- YAML configuration file for campground setup
+- SQLite persistence (survives restarts)
+- Site type filtering (tent, RV, group)
 - Supports multiple date ranges (e.g. 1-night and 2-night stays)
 - Telegram alerts when a site opens up
 - Telegram alerts when a previously-available site disappears ("gone" notifications)
@@ -22,11 +25,12 @@ git clone <repo-url> && cd campsite-reserver
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env  # edit with your Telegram credentials
+cp config.yaml config.yaml  # edit with your campgrounds
 ```
 
 ## Telegram Bot Setup
 
-1. Message [@BotFather](https://t.me/BotFather) on Telegram → `/newbot`
+1. Message [@BotFather](https://t.me/BotFather) on Telegram -> `/newbot`
 2. Follow the prompts, then copy the bot token
 3. Open a chat with your new bot and send any message
 4. Get your chat ID (or group chat ID):
@@ -42,16 +46,19 @@ For group chats: add the bot to the group, send a message in the group, then run
 
 ```bash
 # Single check, no Telegram (test mode)
-python campsite_monitor.py --dates 2024-06-14:2024-06-16 --once --verbose --no-telegram
+python -m campsite_monitor --dates 2024-06-14:2024-06-16 --once --verbose --no-telegram
 
 # Monitor multiple date ranges
-python campsite_monitor.py --dates 2024-06-14:2024-06-16 2024-06-15:2024-06-16
+python -m campsite_monitor --dates 2024-06-14:2024-06-16 2024-06-15:2024-06-16
 
 # Custom polling interval (seconds, default: 300)
-python campsite_monitor.py --dates 2024-06-14:2024-06-16 --interval 120
+python -m campsite_monitor --dates 2024-06-14:2024-06-16 --interval 120
 
 # Custom status page port (default: 8080)
-python campsite_monitor.py --dates 2024-06-14:2024-06-16 --port 9090
+python -m campsite_monitor --dates 2024-06-14:2024-06-16 --port 9090
+
+# Custom config file
+python -m campsite_monitor --dates 2024-06-14:2024-06-16 --config my_config.yaml
 ```
 
 ### CLI Options
@@ -64,6 +71,7 @@ python campsite_monitor.py --dates 2024-06-14:2024-06-16 --port 9090
 | `--verbose` | Enable debug logging |
 | `--no-telegram` | Disable Telegram notifications |
 | `--port` | Status page port (default: 8080) |
+| `--config` | Config file path (default: config.yaml) |
 
 ### Telegram Commands
 
@@ -75,24 +83,41 @@ python campsite_monitor.py --dates 2024-06-14:2024-06-16 --port 9090
 
 ### Campgrounds
 
-Edit `recgov.py` and `reserveca.py` to change which campgrounds are monitored.
+Edit `config.yaml` to specify which campgrounds to monitor.
 
-**Recreation.gov** (`recgov.py`): Find campground IDs from the URL — e.g. `recreation.gov/camping/campgrounds/233116` → ID is `233116`.
+```yaml
+recgov:
+  - id: "233116"
+    name: "Kirk Creek"
+  - id: "231959"
+    name: "Plaskett Creek"
 
-**ReserveCalifornia** (`reserveca.py`): Add parks to the `PARKS` list with just a `place_id`. Facility sections (campground loops) are auto-discovered at startup via the ReserveCalifornia API and cached to `facility_cache.json` (24h TTL).
-
-```python
-PARKS = [
-    {"name": "Julia Pfeiffer Burns SP", "place_id": "661"},
-    {"name": "Pfeiffer Big Sur SP", "place_id": "690"},
-]
+reserveca:
+  - place_id: "661"
+    name: "Julia Pfeiffer Burns SP"
+  - place_id: "690"
+    name: "Pfeiffer Big Sur SP"
 ```
 
-Find the `place_id` from the booking URL — e.g. `reservecalifornia.com/park/690/767` → place_id is `690`.
+**Recreation.gov**: Find campground IDs from the URL -- e.g. `recreation.gov/camping/campgrounds/233116` -> ID is `233116`.
+
+**ReserveCalifornia**: Find the `place_id` from the booking URL -- e.g. `reservecalifornia.com/park/690/767` -> place_id is `690`. Facility sections (campground loops) are auto-discovered at startup via the ReserveCalifornia API and cached to `facility_cache.json` (24h TTL).
 
 If auto-discovery breaks, you can pin specific facility IDs:
-```python
-{"name": "Pfeiffer Big Sur SP", "place_id": "690", "facility_ids": ["767"]}
+```yaml
+reserveca:
+  - place_id: "690"
+    name: "Pfeiffer Big Sur SP"
+    facility_ids: ["767"]
+```
+
+To filter by site type, add a `filters` key:
+```yaml
+reserveca:
+  - place_id: "690"
+    name: "Pfeiffer Big Sur SP"
+    filters:
+      site_type: "tent"  # tent, rv, group
 ```
 
 ### ReserveCalifornia API Reference
@@ -115,7 +140,7 @@ The place API (`POST /rdr/search/place` with `{"PlaceId": <id>}`) returns rich d
 
 **Facility-level fields** (each entry in `SelectedPlace.Facilities`):
 
-Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`. Always use `fdata["FacilityId"]` from inside each object — the dict key may differ (e.g. Hearst San Simeon has key `"4"` but `FacilityId: 787`).
+Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`. Always use `fdata["FacilityId"]` from inside each object -- the dict key may differ (e.g. Hearst San Simeon has key `"4"` but `FacilityId: 787`).
 
 | Field | Example | Notes |
 |-------|---------|-------|
@@ -127,19 +152,39 @@ Note: the `Facilities` dict is keyed by an arbitrary index, not by `FacilityId`.
 | `UnitTypes` | Dict of site types | Contains `Name`, `MaxVehicleLength`, `HasAda`, `AvailableCount` |
 
 **Unit type examples** (nested under each facility):
-- `"Campsite"` — standard sites, `MaxVehicleLength: 32`
-- `"Tent Campsite"` — tent-only
-- `"Premium Campsite"` / `"Premium Tent Campsite"` — premium tier
-- `"Hike In Primitive Campsite"` — walk-in sites
-- `HasAda: true` — ADA accessible sites available
+- `"Campsite"` -- standard sites, `MaxVehicleLength: 32`
+- `"Tent Campsite"` -- tent-only
+- `"Premium Campsite"` / `"Premium Tent Campsite"` -- premium tier
+- `"Hike In Primitive Campsite"` -- walk-in sites
+- `HasAda: true` -- ADA accessible sites available
 
 **Grid API (availability) gotchas:**
 - Slice keys use ISO datetime format: `"2026-04-18T00:00:00"` (not `"04/18/2026"`)
 - `IsFree: true` on a Slice means the site is bookable for that night
-- `IsWalkin: true` — site is walk-in only, cannot be booked online (filter these out)
-- `IsBlocked: true` — site is administratively blocked
-- `IsReservationDraw: true` — site is in a reservation lottery
-- `Lock: "2026-..."` — site is locked by another user mid-checkout (transient)
+- `IsWalkin: true` -- site is walk-in only, cannot be booked online (filter these out)
+- `IsBlocked: true` -- site is administratively blocked
+- `IsReservationDraw: true` -- site is in a reservation lottery
+- `Lock: "2026-..."` -- site is locked by another user mid-checkout (transient)
+
+## Project Structure
+
+```
+campsite-reserver/
+  campsite_monitor/          # Main package
+    __main__.py              # CLI entry point, polling loop, Telegram commands
+    checker.py               # Availability checking orchestration
+    config.py                # YAML config loading
+    db.py                    # SQLite persistence (SiteDB)
+    status_server.py         # Built-in status web page
+    summary.py               # Summary formatting
+    tracker.py               # AvailabilityTracker, FailureTracker, NetworkMonitor
+  api/                       # API clients
+    recgov.py                # Recreation.gov API
+    reserveca.py             # ReserveCalifornia API
+  notify.py                  # Telegram message formatting and sending
+  config.yaml                # Campground configuration
+  .env                       # Telegram credentials (not committed)
+```
 
 ## Raspberry Pi Deployment
 
@@ -152,9 +197,10 @@ rsync -avz --exclude 'venv/' --exclude '__pycache__/' --exclude '.git/' \
 # On the Pi
 cd /home/pi/campsite-monitor
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt  # includes pyyaml
 
-# Edit the service file with your dates and interval
+# Edit config and service file
+nano config.yaml
 nano campsite-monitor.service
 
 # Install and start
@@ -200,8 +246,6 @@ python -m pytest tests/ -v
 
 ## Next Steps
 
-- [ ] Add more CA parks (just add `place_id` to `PARKS` — facilities auto-discovered)
-- [ ] Filter by site type using `UnitTypes` data (tent, RV, group, ADA)
 - [ ] Show park lat/long and booking-window dates in status page
 - [ ] Add SMS alerts via Twilio as a backup notification channel
 - [ ] Webhook integration (Slack, Discord)

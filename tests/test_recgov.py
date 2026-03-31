@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch, MagicMock
 
-import recgov
+from api import recgov
 
 
 def make_response(campsites):
@@ -17,8 +17,8 @@ def make_response(campsites):
 class TestCheckAvailability(unittest.TestCase):
     campground = {"name": "Test Camp", "id": "12345"}
 
-    @patch("recgov.UserAgent")
-    @patch("recgov.requests.get")
+    @patch("api.recgov.UserAgent")
+    @patch("api.recgov.requests.get")
     def test_mixed_availability(self, mock_get, mock_ua):
         mock_ua.return_value.random = "TestAgent"
         mock_get.return_value = make_response({
@@ -45,8 +45,8 @@ class TestCheckAvailability(unittest.TestCase):
         self.assertEqual(result[0]["site"], "001")
         self.assertEqual(result[0]["campground"], "Test Camp")
 
-    @patch("recgov.UserAgent")
-    @patch("recgov.requests.get")
+    @patch("api.recgov.UserAgent")
+    @patch("api.recgov.requests.get")
     def test_one_night_reserved(self, mock_get, mock_ua):
         mock_ua.return_value.random = "TestAgent"
         mock_get.return_value = make_response({
@@ -65,8 +65,8 @@ class TestCheckAvailability(unittest.TestCase):
         )
         self.assertEqual(len(result), 0)
 
-    @patch("recgov.UserAgent")
-    @patch("recgov.requests.get")
+    @patch("api.recgov.UserAgent")
+    @patch("api.recgov.requests.get")
     def test_multi_month_query(self, mock_get, mock_ua):
         mock_ua.return_value.random = "TestAgent"
         # Two months queried: June and July
@@ -90,15 +90,15 @@ class TestCheckAvailability(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(mock_get.call_count, 2)
 
-    @patch("recgov.requests.get", side_effect=Exception("network error"))
+    @patch("api.recgov.requests.get", side_effect=Exception("network error"))
     def test_request_error_propagates(self, mock_get):
         with self.assertRaises(Exception):
             recgov.check_availability(
                 self.campground, date(2024, 6, 14), date(2024, 6, 16)
             )
 
-    @patch("recgov.UserAgent")
-    @patch("recgov.requests.get")
+    @patch("api.recgov.UserAgent")
+    @patch("api.recgov.requests.get")
     def test_empty_response(self, mock_get, mock_ua):
         mock_ua.return_value.random = "TestAgent"
         mock_get.return_value = make_response({})
@@ -108,8 +108,8 @@ class TestCheckAvailability(unittest.TestCase):
         )
         self.assertEqual(result, [])
 
-    @patch("recgov.UserAgent")
-    @patch("recgov.requests.get")
+    @patch("api.recgov.UserAgent")
+    @patch("api.recgov.requests.get")
     def test_request_timeout(self, mock_get, mock_ua):
         mock_ua.return_value.random = "TestAgent"
         mock_get.return_value = make_response({})

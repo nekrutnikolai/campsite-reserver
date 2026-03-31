@@ -8,11 +8,6 @@ import requests
 
 LOG = logging.getLogger(__name__)
 
-PARKS = [
-    {"name": "Julia Pfeiffer Burns SP", "place_id": "661"},
-    {"name": "Pfeiffer Big Sur SP", "place_id": "690"},
-]
-
 CAMPGROUNDS = []  # populated at startup by discover_all_facilities()
 
 PLACE_URLS = [
@@ -62,13 +57,15 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
-def discover_all_facilities():
-    """Discover facilities for all parks and populate CAMPGROUNDS."""
+def discover_all_facilities(parks):
+    """Discover facilities for all parks and populate CAMPGROUNDS.
+    parks: list of {"name": str, "place_id": str, optional "facility_ids": list}
+    """
     global CAMPGROUNDS
     cache = load_cache()
     entries = []
 
-    for park in PARKS:
+    for park in parks:
         place_id = park["place_id"]
         name = park["name"]
 
@@ -111,7 +108,7 @@ def discover_all_facilities():
     LOG.info("Total facilities to monitor: %d", len(CAMPGROUNDS))
 
 
-def check_availability(campground, checkin, checkout):
+def check_availability(campground, checkin, checkout, site_type_filter=None):
     """Check a single ReserveCalifornia campground. Returns list of available sites."""
     facility_id = campground["facility_id"]
     place_id = campground["place_id"]
@@ -155,6 +152,11 @@ def check_availability(campground, checkin, checkout):
 
     available = []
     for unit_id, unit in units.items():
+        if site_type_filter:
+            unit_type = unit.get("UnitTypeName", "")
+            if unit_type not in site_type_filter:
+                continue
+
         slices = unit.get("Slices", {})
         all_free = all(
             slices.get(date_str, {}).get("IsFree", False)
@@ -170,6 +172,7 @@ def check_availability(campground, checkin, checkout):
                 "campground": name,
                 "url": url,
                 "park_url": park_url,
+                "site_type": unit.get("UnitTypeName", ""),
             })
 
     LOG.debug("%s: %d sites available", name, len(available))

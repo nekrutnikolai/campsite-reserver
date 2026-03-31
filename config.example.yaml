@@ -1,0 +1,24 @@
+# Campsite Monitor Configuration
+# See README.md for details on finding campground IDs
+
+# Recreation.gov campgrounds
+# Find IDs from URLs: recreation.gov/camping/campgrounds/233116 → id: "233116"
+recgov:
+  - id: "233116"
+    name: "Kirk Creek"
+  - id: "231959"
+    name: "Plaskett Creek"
+
+# ReserveCalifornia parks
+# Find place_id from URLs: reservecalifornia.com/park/690 → place_id: "690"
+# Facilities (campground loops) are auto-discovered at startup
+reserveca:
+  - place_id: "661"
+    name: "Julia Pfeiffer Burns SP"
+  - place_id: "690"
+    name: "Pfeiffer Big Sur SP"
+    # Optional: pin specific facility IDs instead of auto-discovery
+    # facility_ids: ["767"]
+    # Optional: filter by site type
+    # filters:
+    #   site_types: ["Campsite", "Tent Campsite"]

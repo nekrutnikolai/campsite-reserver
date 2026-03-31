@@ -1,0 +1,11 @@
+recgov:
+  - id: "233116"
+    name: "Kirk Creek"
+  - id: "231959"
+    name: "Plaskett Creek"
+
+reserveca:
+  - place_id: "661"
+    name: "Julia Pfeiffer Burns SP"
+  - place_id: "690"
+    name: "Pfeiffer Big Sur SP"

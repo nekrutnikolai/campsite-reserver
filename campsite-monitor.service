@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/campsite-monitor
-ExecStart=/home/pi/campsite-monitor/venv/bin/python campsite_monitor.py --dates YYYY-MM-DD:YYYY-MM-DD
+ExecStart=/home/pi/campsite-monitor/venv/bin/python -m campsite_monitor --dates YYYY-MM-DD:YYYY-MM-DD --interval 60
 Restart=on-failure
 RestartSec=30
 

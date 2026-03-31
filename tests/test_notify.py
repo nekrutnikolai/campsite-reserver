@@ -20,6 +20,24 @@ class TestFormatAlert(unittest.TestCase):
         self.assertIn("[Book now](https://example.com/book)", result)
         self.assertIn("[Browse facility](https://example.com/park)", result)
 
+    def test_format_alert_with_site_type(self):
+        result = notify.format_alert(
+            "Kirk Creek", "042", "https://example.com/book",
+            site_type="Standard Campsite",
+        )
+        self.assertIn("*Kirk Creek*", result)
+        self.assertIn("Site 042", result)
+        self.assertIn("Standard Campsite", result)
+        self.assertIn("[Book now](https://example.com/book)", result)
+
+    def test_format_alert_without_site_type(self):
+        result = notify.format_alert("Kirk Creek", "042", "https://example.com/book")
+        self.assertIn("*Kirk Creek*", result)
+        self.assertIn("Site 042", result)
+        self.assertIn("[Book now](https://example.com/book)", result)
+        # Verify no extra newline between "available!" and "[Book now]"
+        self.assertIn("available!\n[Book now]", result)
+
 
 class TestFormatGone(unittest.TestCase):
     def test_format_gone(self):

@@ -29,9 +29,12 @@ def send_telegram(token, chat_id, message):
         return False
 
 
-def format_alert(campground, site, url, park_url=None):
+def format_alert(campground, site, url, park_url=None, site_type=None):
     """Format a Markdown alert message."""
-    msg = f"\U0001f3d5 *{escape_md(campground)}* \u2014 Site {escape_md(site)} available!\n[Book now]({url})"
+    msg = f"\U0001f3d5 *{escape_md(campground)}* \u2014 Site {escape_md(site)} available!"
+    if site_type:
+        msg += f"\n{escape_md(site_type)}"
+    msg += f"\n[Book now]({url})"
     if park_url:
         msg += f" | [Browse facility]({park_url})"
     return msg
