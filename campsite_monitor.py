@@ -72,6 +72,15 @@ def check_all(checkin, checkout):
     return results, errors
 
 
+def check_connectivity():
+    """Quick connectivity check. Returns True if network is reachable."""
+    try:
+        requests.head("https://www.google.com", timeout=5)
+        return True
+    except Exception:
+        return False
+
+
 def format_summary(checks, failures, failed_sources, sites_found, total_tracked):
     all_names = [cg["name"] for cg in recgov.CAMPGROUNDS + reserveca.CAMPGROUNDS]
     lines = ["\U0001f4cb *Daily Summary*"]
@@ -372,6 +381,8 @@ def main():
     last_update_id = 0
     consecutive_failures = {}  # campground name -> count
     alerted_sources = set()    # sources we've already sent a failure alert for
+    network_down_since = None    # timestamp when network first went down
+    network_alerted = False      # whether we've sent the "network down" alert
 
     # Flush any old messages so we don't process stale /summary commands
     if use_telegram:
@@ -389,98 +400,113 @@ def main():
 
     while True:
         try:
-            for checkin, checkout in date_ranges:
-                LOG.info("Checking availability for %s to %s...", checkin, checkout)
+            if not check_connectivity():
+                LOG.warning("Network unavailable, skipping cycle")
+                if network_down_since is None:
+                    network_down_since = time.monotonic()
+                elif not network_alerted and time.monotonic() - network_down_since > 300:
+                    network_alerted = True
+                    if use_telegram:
+                        notify.send_telegram(token, chat_id, "\u26a0\ufe0f *Network down* for 5\\+ minutes")
+            else:
+                if network_alerted:
+                    if use_telegram:
+                        notify.send_telegram(token, chat_id, "\u2705 *Network recovered*")
+                network_down_since = None
+                network_alerted = False
 
-                available, errors = check_all(checkin, checkout)
-                checks += 1
-                status["checks"] = checks
-                status["last_check"] = datetime.now().isoformat(timespec="seconds")
-                if errors:
-                    failures += 1
-                    failed_sources.update(errors)
-                status["failures"] = failures
-                status["failed_sources"] = sorted(failed_sources)
+                for checkin, checkout in date_ranges:
+                    LOG.info("Checking availability for %s to %s...", checkin, checkout)
 
-                # Track consecutive failures and send alerts
-                all_names = {cg["name"] for cg in recgov.CAMPGROUNDS + reserveca.CAMPGROUNDS}
-                error_set = set(errors)
-                for name in all_names:
-                    if name in error_set:
-                        consecutive_failures[name] = consecutive_failures.get(name, 0) + 1
-                        if consecutive_failures[name] == 3 and name not in alerted_sources:
-                            alerted_sources.add(name)
+                    available, errors = check_all(checkin, checkout)
+                    checks += 1
+                    status["checks"] = checks
+                    status["last_check"] = datetime.now().isoformat(timespec="seconds")
+                    if errors:
+                        failures += 1
+                        failed_sources.update(errors)
+                    status["failures"] = failures
+                    status["failed_sources"] = sorted(failed_sources)
+
+                    # Track consecutive failures and send alerts
+                    all_names = {cg["name"] for cg in recgov.CAMPGROUNDS + reserveca.CAMPGROUNDS}
+                    error_set = set(errors)
+                    for name in all_names:
+                        if name in error_set:
+                            consecutive_failures[name] = consecutive_failures.get(name, 0) + 1
+                            if consecutive_failures[name] == 3 and name not in alerted_sources:
+                                alerted_sources.add(name)
+                                if use_telegram:
+                                    notify.send_telegram(token, chat_id,
+                                        f"\u26a0\ufe0f *API failure:* {notify.escape_md(name)}\n3 consecutive check failures")
+                        else:
+                            if name in alerted_sources:
+                                alerted_sources.discard(name)
+                                if use_telegram:
+                                    notify.send_telegram(token, chat_id,
+                                        f"\u2705 *Recovered:* {notify.escape_md(name)}")
+                            consecutive_failures[name] = 0
+
+                    nights = (checkout - checkin).days
+                    now_available = {}
+                    for site in available:
+                        key = (site["campground"], site["site"], str(checkin), str(checkout))
+                        now_available[key] = site
+
+                    # Detect NEW sites (in now but not in previously)
+                    for key, site in now_available.items():
+                        if key not in previously_available:
+                            total_found.add(key)
+                            sites_found += 1
+                            status["sites_found"] = sites_found
+                            status["total_tracked"] = len(total_found)
+                            status["recent_finds"].append(f"{site['campground']} - {site['site']} ({checkin} to {checkout})")
+                            status["recent_finds"] = status["recent_finds"][-50:]
+
+                            msg = notify.format_alert(site["campground"], site["site"], site["url"], site.get("park_url"))
+                            msg += f"\n{checkin} to {checkout} ({nights} night{'s' if nights != 1 else ''})"
+                            LOG.info("NEW: %s - %s (%s to %s)", site["campground"], site["site"], checkin, checkout)
+
                             if use_telegram:
-                                notify.send_telegram(token, chat_id,
-                                    f"\u26a0\ufe0f *API failure:* {notify.escape_md(name)}\n3 consecutive check failures")
-                    else:
-                        if name in alerted_sources:
-                            alerted_sources.discard(name)
+                                notify.send_telegram(token, chat_id, msg)
+
+                    # Detect GONE sites (in previously but not in now)
+                    for key, site in previously_available.items():
+                        # Only compare keys for the same date range
+                        if key[2] == str(checkin) and key[3] == str(checkout) and key not in now_available:
+                            msg = notify.format_gone(site["campground"], site["site"], checkin, checkout)
+                            LOG.info("GONE: %s - %s (%s to %s)", site["campground"], site["site"], checkin, checkout)
                             if use_telegram:
-                                notify.send_telegram(token, chat_id,
-                                    f"\u2705 *Recovered:* {notify.escape_md(name)}")
-                        consecutive_failures[name] = 0
+                                notify.send_telegram(token, chat_id, msg)
 
-                nights = (checkout - checkin).days
-                now_available = {}
-                for site in available:
-                    key = (site["campground"], site["site"], str(checkin), str(checkout))
-                    now_available[key] = site
+                    # Update previously_available: remove old keys for this date range, add new
+                    previously_available = {
+                        k: v for k, v in previously_available.items()
+                        if not (k[2] == str(checkin) and k[3] == str(checkout))
+                    }
+                    previously_available.update(now_available)
 
-                # Detect NEW sites (in now but not in previously)
-                for key, site in now_available.items():
-                    if key not in previously_available:
-                        total_found.add(key)
-                        sites_found += 1
-                        status["sites_found"] = sites_found
-                        status["total_tracked"] = len(total_found)
-                        status["recent_finds"].append(f"{site['campground']} - {site['site']} ({checkin} to {checkout})")
-                        status["recent_finds"] = status["recent_finds"][-50:]
-
-                        msg = notify.format_alert(site["campground"], site["site"], site["url"], site.get("park_url"))
-                        msg += f"\n{checkin} to {checkout} ({nights} night{'s' if nights != 1 else ''})"
-                        LOG.info("NEW: %s - %s (%s to %s)", site["campground"], site["site"], checkin, checkout)
-
-                        if use_telegram:
-                            notify.send_telegram(token, chat_id, msg)
-
-                # Detect GONE sites (in previously but not in now)
-                for key, site in previously_available.items():
-                    # Only compare keys for the same date range
-                    if key[2] == str(checkin) and key[3] == str(checkout) and key not in now_available:
-                        msg = notify.format_gone(site["campground"], site["site"], checkin, checkout)
-                        LOG.info("GONE: %s - %s (%s to %s)", site["campground"], site["site"], checkin, checkout)
-                        if use_telegram:
-                            notify.send_telegram(token, chat_id, msg)
-
-                # Update previously_available: remove old keys for this date range, add new
-                previously_available = {
-                    k: v for k, v in previously_available.items()
-                    if not (k[2] == str(checkin) and k[3] == str(checkout))
-                }
-                previously_available.update(now_available)
-
-            # Check for /summary command
-            if use_telegram:
-                last_update_id, summary_requested = check_commands(token, last_update_id)
-                if summary_requested:
-                    summary = format_summary(checks, failures, failed_sources, sites_found, len(total_found))
-                    notify.send_telegram(token, chat_id, summary)
-
-            # Daily summary at noon
-            now = datetime.now()
-            if now.hour == 12 and not summary_sent_today:
-                summary = format_summary(checks, failures, failed_sources, sites_found, len(total_found))
-                LOG.info("Daily summary:\n%s", summary)
+                # Check for /summary command
                 if use_telegram:
-                    notify.send_telegram(token, chat_id, summary)
-                checks = 0
-                failures = 0
-                failed_sources.clear()
-                sites_found = 0
-                summary_sent_today = True
-            elif now.hour != 12:
-                summary_sent_today = False
+                    last_update_id, summary_requested = check_commands(token, last_update_id)
+                    if summary_requested:
+                        summary = format_summary(checks, failures, failed_sources, sites_found, len(total_found))
+                        notify.send_telegram(token, chat_id, summary)
+
+                # Daily summary at noon
+                now = datetime.now()
+                if now.hour == 12 and not summary_sent_today:
+                    summary = format_summary(checks, failures, failed_sources, sites_found, len(total_found))
+                    LOG.info("Daily summary:\n%s", summary)
+                    if use_telegram:
+                        notify.send_telegram(token, chat_id, summary)
+                    checks = 0
+                    failures = 0
+                    failed_sources.clear()
+                    sites_found = 0
+                    summary_sent_today = True
+                elif now.hour != 12:
+                    summary_sent_today = False
         except Exception:
             LOG.exception("Unexpected error in main loop, continuing...")
 

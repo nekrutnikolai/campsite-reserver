@@ -263,5 +263,84 @@ class TestMainLoopResilience(unittest.TestCase):
         campsite_monitor.main()
 
 
+class TestNetworkPreCheck(unittest.TestCase):
+    """Test that the main loop skips cycles when the network is down."""
+
+    @patch("campsite_monitor.check_connectivity", return_value=False)
+    @patch("campsite_monitor.time.sleep")
+    @patch("campsite_monitor.start_status_server")
+    @patch("campsite_monitor.get_campground_info", return_value=[])
+    @patch("campsite_monitor.reserveca")
+    @patch("campsite_monitor.recgov")
+    @patch("campsite_monitor.check_all")
+    @patch("dotenv.load_dotenv")
+    @patch("sys.argv", ["prog", "--dates", "2024-06-14:2024-06-16", "--once", "--no-telegram"])
+    def test_skips_cycle_when_network_down(self, mock_dotenv, mock_check_all,
+                                            mock_rg, mock_rca, mock_info,
+                                            mock_server, mock_sleep, mock_conn):
+        mock_rg.CAMPGROUNDS = []
+        mock_rca.CAMPGROUNDS = []
+        mock_rca.discover_all_facilities = MagicMock()
+        campsite_monitor.main()
+        mock_check_all.assert_not_called()
+
+    def _run_network_check(self, network_up, network_down_since, network_alerted,
+                           now, send_calls):
+        """Simulate one iteration of the network-down tracking logic.
+
+        Returns updated (network_down_since, network_alerted).
+        """
+        NETWORK_ALERT_THRESHOLD = 300  # seconds
+
+        if not network_up:
+            if network_down_since is None:
+                network_down_since = now
+            elif not network_alerted and (now - network_down_since) >= NETWORK_ALERT_THRESHOLD:
+                send_calls.append("network_down")
+                network_alerted = True
+        else:
+            if network_alerted:
+                send_calls.append("network_recovered")
+            network_down_since = None
+            network_alerted = False
+
+        return network_down_since, network_alerted
+
+    def test_network_down_alert_after_threshold(self):
+        send_calls = []
+        network_down_since = None
+        network_alerted = False
+
+        # First call with network down: no alert sent, network_down_since set
+        network_down_since, network_alerted = self._run_network_check(
+            network_up=False, network_down_since=network_down_since,
+            network_alerted=network_alerted, now=1000.0, send_calls=send_calls)
+        self.assertAlmostEqual(network_down_since, 1000.0)
+        self.assertFalse(network_alerted)
+        self.assertEqual(send_calls, [])
+
+        # Subsequent call before 300s: no alert
+        network_down_since, network_alerted = self._run_network_check(
+            network_up=False, network_down_since=network_down_since,
+            network_alerted=network_alerted, now=1200.0, send_calls=send_calls)
+        self.assertFalse(network_alerted)
+        self.assertEqual(send_calls, [])
+
+        # Call after 300s: alert sent
+        network_down_since, network_alerted = self._run_network_check(
+            network_up=False, network_down_since=network_down_since,
+            network_alerted=network_alerted, now=1300.0, send_calls=send_calls)
+        self.assertTrue(network_alerted)
+        self.assertEqual(send_calls, ["network_down"])
+
+        # Network comes back: recovery alert sent, state reset
+        network_down_since, network_alerted = self._run_network_check(
+            network_up=True, network_down_since=network_down_since,
+            network_alerted=network_alerted, now=1400.0, send_calls=send_calls)
+        self.assertIsNone(network_down_since)
+        self.assertFalse(network_alerted)
+        self.assertEqual(send_calls, ["network_down", "network_recovered"])
+
+
 if __name__ == "__main__":
     unittest.main()

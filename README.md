@@ -12,6 +12,7 @@ Polls [Recreation.gov](https://www.recreation.gov) and [ReserveCalifornia](https
 - `/summary` bot command for on-demand status
 - Daily summary at noon
 - Built-in status web page with health indicator and logs
+- Network pre-check skips cycles during WiFi outages (alerts after 5min sustained downtime)
 - Rotating log files (5MB max)
 
 ## Quick Start
